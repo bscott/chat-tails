@@ -3,7 +3,6 @@ package chat
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 )
@@ -56,7 +55,6 @@ func (r *Room) run() {
 	for {
 		select {
 		case <-r.ctx.Done():
-			log.Printf("Room '%s' is shutting down", r.Name)
 			return
 		case client := <-r.join:
 			r.addClient(client)
@@ -120,9 +118,7 @@ func (r *Room) broadcastMessage(msg Message) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	
-	log.Printf("Broadcasting message from %s to %d clients", msg.From, len(r.clients))
-	for nickname, client := range r.clients {
-		log.Printf("Sending to client: %s", nickname)
+	for _, client := range r.clients {
 		go client.sendMessage(msg) // Use goroutine to avoid blocking
 	}
 }
@@ -166,8 +162,6 @@ func (r *Room) IsNicknameAvailable(nickname string) bool {
 
 // Stop gracefully shuts down the room
 func (r *Room) Stop() error {
-	log.Printf("Stopping room '%s'", r.Name)
-	
 	// Cancel the context to signal the run loop to exit
 	r.cancel()
 	
@@ -179,6 +173,5 @@ func (r *Room) Stop() error {
 	close(r.join)
 	close(r.leave)
 	
-	log.Printf("Room '%s' stopped", r.Name)
 	return nil
 }

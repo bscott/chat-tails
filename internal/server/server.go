@@ -83,9 +83,7 @@ func (s *Server) Start() error {
 	
 	s.listener = listener
 	
-	log.Printf("Server started on port %d", s.config.Port)
-	log.Printf("Room name: %s", s.config.RoomName)
-	log.Printf("Maximum users: %d", s.config.MaxUsers)
+	log.Printf("Server started on port %d (room: %s, max users: %d)", s.config.Port, s.config.RoomName, s.config.MaxUsers)
 	
 	// Accept connections
 	s.wg.Add(1)
@@ -163,7 +161,6 @@ func (s *Server) Stop() error {
 	
 	// Stop the chat room
 	if s.chatRoom != nil {
-		log.Print("Stopping chat room...")
 		if err := s.chatRoom.Stop(); err != nil {
 			log.Printf("Error stopping chat room: %v", err)
 		}
@@ -171,15 +168,13 @@ func (s *Server) Stop() error {
 	
 	// Close all active connections
 	s.mu.Lock()
-	for addr, conn := range s.connections {
-		log.Printf("Closing connection from %s", addr)
+	for _, conn := range s.connections {
 		conn.Close()
 	}
 	s.mu.Unlock()
 	
 	// Close the listener
 	if s.listener != nil {
-		log.Print("Closing listener")
 		if err := s.listener.Close(); err != nil {
 			log.Printf("Error closing listener: %v", err)
 		}
@@ -187,7 +182,6 @@ func (s *Server) Stop() error {
 	
 	// Close the tsnet server if in Tailscale mode
 	if s.config.EnableTailscale && s.tsServer != nil {
-		log.Print("Closing Tailscale node")
 		if err := s.tsServer.Close(); err != nil {
 			log.Printf("Error closing Tailscale node: %v", err)
 		}

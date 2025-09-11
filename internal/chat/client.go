@@ -160,11 +160,8 @@ func (c *Client) sendWelcomeMessage() error {
 
 // Handle handles client interactions
 func (c *Client) Handle(ctx context.Context) {
-	log.Printf("Starting handler for client %s", c.Nickname)
-	
 	// Cleanup when done
 	defer func() {
-		log.Printf("Client handler for %s is shutting down", c.Nickname)
 		c.room.Leave(c)
 	}()
 	
@@ -176,7 +173,6 @@ func (c *Client) Handle(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("Context cancelled for client %s", c.Nickname)
 			return
 			
 		default:
@@ -193,13 +189,11 @@ func (c *Client) Handle(ctx context.Context) {
 			// Wait for either a message, error, or context cancellation
 			select {
 			case <-ctx.Done():
-				log.Printf("Context cancelled while reading for client %s", c.Nickname)
 				return
 				
 			case err := <-readErrorCh:
 				if err == io.EOF {
 					// Client disconnected normally
-					log.Printf("Client %s disconnected (EOF)", c.Nickname)
 					return
 				}
 				
@@ -219,7 +213,6 @@ func (c *Client) Handle(ctx context.Context) {
 				
 				// Validate message length
 				if err := c.validateMessageLength(message); err != nil {
-					log.Printf("Message from %s rejected: %v", c.Nickname, err)
 					c.sendSystemMessage(fmt.Sprintf("Error: %v", err))
 					continue
 				}
@@ -227,7 +220,6 @@ func (c *Client) Handle(ctx context.Context) {
 				// Check rate limiting (except for /quit command)
 				if !strings.HasPrefix(message, "/quit") {
 					if err := c.checkRateLimit(); err != nil {
-						log.Printf("Message from %s rate limited: %v", c.Nickname, err)
 						c.sendSystemMessage(fmt.Sprintf("Error: %v", err))
 						continue
 					}
@@ -236,7 +228,6 @@ func (c *Client) Handle(ctx context.Context) {
 				// Handle command or regular message
 				if strings.HasPrefix(message, "/") {
 					if err := c.handleCommand(message); err != nil {
-						log.Printf("Error handling command from %s: %v", c.Nickname, err)
 						c.sendSystemMessage(fmt.Sprintf("Error: %v", err))
 					}
 				} else {
@@ -366,8 +357,6 @@ func (c *Client) sendMessage(msg Message) {
 	var formatted string
 	timeStr := msg.Timestamp.Format("15:04:05")
 	
-	// Log the message for debugging
-	log.Printf("Sending message from %s to %s: %s", msg.From, c.Nickname, msg.Content)
 	
 	if msg.IsSystem {
 		formatted = ui.FormatSystemMessage(msg.Content) + "\r\n"
@@ -387,7 +376,7 @@ func (c *Client) sendMessage(msg Message) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Recovered from panic in sendMessage: %v", r)
+				log.Printf("Panic in sendMessage for client %s: %v", c.Nickname, r)
 				errCh <- fmt.Errorf("panic in sendMessage: %v", r)
 			}
 			close(errCh)

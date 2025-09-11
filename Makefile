@@ -1,4 +1,4 @@
-.PHONY: build run clean docker-build docker-run
+.PHONY: build run clean test docker-build docker-run
 
 # Binary output
 BINARY_NAME=chat-server
@@ -14,6 +14,10 @@ run: build
 # Clean build artifacts
 clean:
 	rm -f $(BINARY_NAME)
+
+# Run tests
+test:
+	go test -v ./internal/chat/
 
 # Build Docker image
 docker-build:

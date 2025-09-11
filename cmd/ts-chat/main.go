@@ -71,8 +71,6 @@ func main() {
 		log.Printf("Chat server started. Users can connect via: telnet localhost %d", cfg.Port)
 	}
 	
-	log.Printf("Room name: %s", cfg.RoomName)
-	log.Printf("Maximum users: %d", cfg.MaxUsers)
 	log.Print("Press Ctrl+C to stop the server")
 
 	// Wait for interrupt signal
