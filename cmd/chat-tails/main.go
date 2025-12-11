@@ -7,8 +7,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/spf13/pflag"
 	"github.com/bscott/ts-chat/internal/server"
+	"github.com/spf13/pflag"
+)
+
+// Version info - set by ldflags at build time
+var (
+	Version = "dev"
+	Commit  = "unknown"
 )
 
 // Default configuration values
@@ -32,13 +38,21 @@ type config struct {
 
 func main() {
 	// Parse command-line flags
-	cfg := parseFlags()
+	cfg, showVersion := parseFlags()
+
+	// Handle --version flag
+	if showVersion {
+		fmt.Printf("Chat Tails %s (commit: %s)\n", Version, Commit)
+		os.Exit(0)
+	}
 
 	// Setup logger
 	log.SetPrefix("[chat-tails] ")
 
+	log.Printf("Chat Tails %s (commit: %s)", Version, Commit)
+
 	if cfg.EnableTailscale {
-		log.Printf("Starting Chat Tails with hostname: %s, port: %d", cfg.HostName, cfg.Port)
+		log.Printf("Starting with hostname: %s, port: %d", cfg.HostName, cfg.Port)
 		
 		// Check for auth key
 		if os.Getenv("TS_AUTHKEY") == "" {
@@ -90,8 +104,9 @@ func main() {
 	os.Exit(0)
 }
 
-func parseFlags() config {
+func parseFlags() (config, bool) {
 	var cfg config
+	var showVersion bool
 
 	// Define command-line flags
 	pflag.IntVarP(&cfg.Port, "port", "p", defaultPort, "TCP port to listen on")
@@ -101,6 +116,7 @@ func parseFlags() config {
 	pflag.StringVarP(&cfg.HostName, "hostname", "H", defaultHostname, "Tailscale hostname (only used if --tailscale is enabled)")
 	pflag.BoolVar(&cfg.EnableHistory, "history", false, "Enable message history for new users")
 	pflag.IntVar(&cfg.HistorySize, "history-size", defaultHistorySize, "Number of messages to keep in history")
+	pflag.BoolVarP(&showVersion, "version", "v", false, "Show version information")
 
 	// Display help message
 	pflag.Usage = func() {
@@ -110,5 +126,5 @@ func parseFlags() config {
 	}
 
 	pflag.Parse()
-	return cfg
+	return cfg, showVersion
 }

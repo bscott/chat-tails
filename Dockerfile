@@ -2,6 +2,10 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
+# Build arguments for version info
+ARG GIT_TAG=dev
+ARG GIT_COMMIT=unknown
+
 # Copy go.mod and go.sum
 COPY go.mod go.sum ./
 
@@ -11,8 +15,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o chat-server ./cmd/ts-chat
+# Build the application with version info
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-X main.Version=${GIT_TAG} -X main.Commit=${GIT_COMMIT}" \
+    -o chat-server ./cmd/chat-tails
 
 # Create final lightweight image
 FROM alpine:latest

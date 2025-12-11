@@ -1,0 +1,67 @@
+name: Test and Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - '.github/workflows/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Build
+        run: go build -v ./cmd/chat-tails
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Get version info
+        id: version
+        run: |
+          echo "git_tag=${GITHUB_REF_NAME:-dev}" >> $GITHUB_OUTPUT
+          echo "git_commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test Docker build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          build-args: |
+            GIT_TAG=${{ steps.version.outputs.git_tag }}
+            GIT_COMMIT=${{ steps.version.outputs.git_commit }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
