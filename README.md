@@ -64,6 +64,23 @@ docker run -e TS_AUTHKEY=tskey-auth-xxxxx chat-tails --tailscale --hostname mych
 | `--hostname` | `-H` | "chatroom" | Tailscale hostname (requires `--tailscale`) |
 | `--history` | | false | Enable message history for new users |
 | `--history-size` | | 50 | Number of messages to keep in history |
+| `--plain-text` | | false | Disable ANSI formatting (for Windows telnet) |
+| `--version` | `-v` | | Show version information |
+
+## Windows Telnet Compatibility
+
+Windows telnet has limited ANSI escape sequence support. If you see garbled formatting characters when connecting from Windows telnet, start the server with the `--plain-text` flag:
+
+```bash
+./chat-server --plain-text
+```
+
+This disables all ANSI color codes and cursor control sequences for a better experience on legacy telnet clients.
+
+**Recommended:** For the best experience on Windows, use a modern terminal emulator like:
+- Windows Terminal with `telnet` or `ssh`
+- PuTTY
+- WSL with `nc` or `telnet`
 
 ## Tailscale Setup
 

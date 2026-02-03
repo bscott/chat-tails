@@ -118,7 +118,13 @@ func NewClient(conn net.Conn, room *Room) (*Client, error) {
 // requestNickname asks the user for a nickname
 func (c *Client) requestNickname() error {
 	// Send welcome message
-	if err := c.write(ui.FormatTitle("Welcome to Chat Tails") + "\r\n\r\n"); err != nil {
+	var welcomeTitle string
+	if c.room.PlainText {
+		welcomeTitle = ui.FormatTitlePlain("Welcome to Chat Tails")
+	} else {
+		welcomeTitle = ui.FormatTitle("Welcome to Chat Tails")
+	}
+	if err := c.write(welcomeTitle + "\r\n\r\n"); err != nil {
 		return fmt.Errorf("failed to write welcome message: %w", err)
 	}
 	
@@ -176,13 +182,21 @@ func (c *Client) sendWelcomeMessage() error {
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
 `
-	coloredBanner := ui.SystemStyle.Render(banner)
-	welcomeMsg := ui.FormatWelcomeMessage(c.room.Name, c.Nickname)
-	
+	var coloredBanner, welcomeMsg string
+
+	if c.room.PlainText {
+		// In plain text mode, skip the banner styling
+		coloredBanner = banner
+		welcomeMsg = ui.FormatWelcomeMessagePlain(c.room.Name, c.Nickname)
+	} else {
+		coloredBanner = ui.SystemStyle.Render(banner)
+		welcomeMsg = ui.FormatWelcomeMessage(c.room.Name, c.Nickname)
+	}
+
 	if err := c.write(coloredBanner + "\r\n"); err != nil {
 		return fmt.Errorf("failed to write banner: %w", err)
 	}
-	
+
 	if err := c.write(welcomeMsg + "\r\n\r\n"); err != nil {
 		return fmt.Errorf("failed to write welcome message: %w", err)
 	}
@@ -197,13 +211,22 @@ func (c *Client) sendHistory() {
 		return
 	}
 
-	c.write(ui.FormatSystemMessage("--- Recent messages ---") + "\r\n")
+	var headerMsg, footerMsg string
+	if c.room.PlainText {
+		headerMsg = ui.FormatSystemMessagePlain("--- Recent messages ---")
+		footerMsg = ui.FormatSystemMessagePlain("--- End of history ---")
+	} else {
+		headerMsg = ui.FormatSystemMessage("--- Recent messages ---")
+		footerMsg = ui.FormatSystemMessage("--- End of history ---")
+	}
+
+	c.write(headerMsg + "\r\n")
 
 	for _, msg := range history {
 		c.sendMessage(msg)
 	}
 
-	c.write(ui.FormatSystemMessage("--- End of history ---") + "\r\n\r\n")
+	c.write(footerMsg + "\r\n\r\n")
 }
 
 // Handle handles client interactions
@@ -300,7 +323,10 @@ func (c *Client) Handle(ctx context.Context) {
 
 // clearInputLine clears the echoed input line
 func (c *Client) clearInputLine() {
-	c.write(cursorUp + clearLine + cursorToStart)
+	// Skip cursor manipulation in plain text mode
+	if !c.room.PlainText {
+		c.write(cursorUp + clearLine + cursorToStart)
+	}
 }
 
 // showPrompt displays the input prompt
@@ -399,13 +425,23 @@ func (c *Client) handleCommand(cmd string) error {
 // showUserList shows the list of users in the room
 func (c *Client) showUserList() error {
 	users := c.room.GetUserList()
-	msg := ui.FormatUserList(c.room.Name, users, c.room.MaxUsers)
+	var msg string
+	if c.room.PlainText {
+		msg = ui.FormatUserListPlain(c.room.Name, users, c.room.MaxUsers)
+	} else {
+		msg = ui.FormatUserList(c.room.Name, users, c.room.MaxUsers)
+	}
 	return c.write(msg + "\r\n")
 }
 
 // showHelp shows the help message
 func (c *Client) showHelp() error {
-	helpMsg := ui.FormatHelp()
+	var helpMsg string
+	if c.room.PlainText {
+		helpMsg = ui.FormatHelpPlain()
+	} else {
+		helpMsg = ui.FormatHelp()
+	}
 	return c.write(helpMsg + "\r\n")
 }
 
@@ -426,12 +462,24 @@ func (c *Client) sendMessage(msg Message) {
 	var formatted string
 	timeStr := msg.Timestamp.Format("15:04:05")
 
-	if msg.IsSystem {
-		formatted = ui.FormatSystemMessage(msg.Content) + "\r\n"
-	} else if msg.IsAction {
-		formatted = ui.FormatActionMessage(msg.From, msg.Content) + "\r\n"
+	if c.room.PlainText {
+		// Use plain text formatters
+		if msg.IsSystem {
+			formatted = ui.FormatSystemMessagePlain(msg.Content) + "\r\n"
+		} else if msg.IsAction {
+			formatted = ui.FormatActionMessagePlain(msg.From, msg.Content) + "\r\n"
+		} else {
+			formatted = ui.FormatUserMessagePlain(msg.From, msg.Content, timeStr) + "\r\n"
+		}
 	} else {
-		formatted = ui.FormatUserMessage(msg.From, msg.Content, timeStr) + "\r\n"
+		// Use ANSI formatters
+		if msg.IsSystem {
+			formatted = ui.FormatSystemMessage(msg.Content) + "\r\n"
+		} else if msg.IsAction {
+			formatted = ui.FormatActionMessage(msg.From, msg.Content) + "\r\n"
+		} else {
+			formatted = ui.FormatUserMessage(msg.From, msg.Content, timeStr) + "\r\n"
+		}
 	}
 
 	c.mu.Lock()

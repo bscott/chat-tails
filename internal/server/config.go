@@ -9,4 +9,5 @@ type Config struct {
 	HostName        string // Tailscale hostname (only used if EnableTailscale is true)
 	EnableHistory   bool   // Whether to enable message history for new users
 	HistorySize     int    // Number of messages to keep in history
+	PlainText       bool   // Whether to disable ANSI formatting (for Windows telnet compatibility)
 }

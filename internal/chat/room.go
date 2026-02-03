@@ -32,10 +32,11 @@ type Room struct {
 	historySize   int
 	history       []Message
 	historyMu     sync.RWMutex
+	PlainText     bool
 }
 
 // NewRoom creates a new chat room
-func NewRoom(name string, maxUsers int, enableHistory bool, historySize int) *Room {
+func NewRoom(name string, maxUsers int, enableHistory bool, historySize int, plainText bool) *Room {
 	ctx, cancel := context.WithCancel(context.Background())
 	room := &Room{
 		Name:          name,
@@ -50,6 +51,7 @@ func NewRoom(name string, maxUsers int, enableHistory bool, historySize int) *Ro
 		enableHistory: enableHistory,
 		historySize:   historySize,
 		history:       make([]Message, 0, historySize),
+		PlainText:     plainText,
 	}
 
 	go room.run()

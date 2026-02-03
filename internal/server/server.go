@@ -31,7 +31,7 @@ func NewServer(cfg Config) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create a new chat room
-	room := chat.NewRoom(cfg.RoomName, cfg.MaxUsers, cfg.EnableHistory, cfg.HistorySize)
+	room := chat.NewRoom(cfg.RoomName, cfg.MaxUsers, cfg.EnableHistory, cfg.HistorySize, cfg.PlainText)
 
 	return &Server{
 		config:      cfg,
