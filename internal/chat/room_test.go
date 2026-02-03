@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewRoom(t *testing.T) {
-	room := NewRoom("Test Room", 10, false, 0)
+	room := NewRoom("Test Room", 10, false, 0, false)
 	defer room.Stop()
 	
 	if room.Name != "Test Room" {
@@ -35,7 +35,7 @@ func TestNewRoom(t *testing.T) {
 }
 
 func TestRoomStop(t *testing.T) {
-	room := NewRoom("Test Room", 10, false, 0)
+	room := NewRoom("Test Room", 10, false, 0, false)
 	
 	// Give room time to start
 	time.Sleep(10 * time.Millisecond)
@@ -83,7 +83,7 @@ func TestMessageStruct(t *testing.T) {
 }
 
 func TestRoomChannels(t *testing.T) {
-	room := NewRoom("Test Room", 5, false, 0)
+	room := NewRoom("Test Room", 5, false, 0, false)
 	defer room.Stop()
 	
 	// Test that channels are properly initialized

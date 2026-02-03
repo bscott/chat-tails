@@ -34,6 +34,7 @@ type config struct {
 	HostName        string
 	EnableHistory   bool
 	HistorySize     int
+	PlainText       bool
 }
 
 func main() {
@@ -72,6 +73,7 @@ func main() {
 		HostName:        cfg.HostName,
 		EnableHistory:   cfg.EnableHistory,
 		HistorySize:     cfg.HistorySize,
+		PlainText:       cfg.PlainText,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
@@ -116,6 +118,7 @@ func parseFlags() (config, bool) {
 	pflag.StringVarP(&cfg.HostName, "hostname", "H", defaultHostname, "Tailscale hostname (only used if --tailscale is enabled)")
 	pflag.BoolVar(&cfg.EnableHistory, "history", false, "Enable message history for new users")
 	pflag.IntVar(&cfg.HistorySize, "history-size", defaultHistorySize, "Number of messages to keep in history")
+	pflag.BoolVar(&cfg.PlainText, "plain-text", false, "Disable ANSI formatting (for Windows telnet compatibility)")
 	pflag.BoolVarP(&showVersion, "version", "v", false, "Show version information")
 
 	// Display help message

@@ -11,6 +11,7 @@ make build              # or: go build -o chat-server ./cmd/ts-chat
 # Run the server
 make run                # builds and runs
 ./chat-server           # run directly
+./chat-server --plain-text  # run with plain-text mode (Windows telnet compatibility)
 
 # Run tests
 make test               # runs: go test -v ./internal/chat/
