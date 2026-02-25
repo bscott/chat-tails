@@ -160,17 +160,24 @@ func (m ChatModel) joinRoomCmd() tea.Cmd {
 }
 
 func (m ChatModel) nicknameView() string {
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7D56F4"))
+	bannerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#7D56F4")).
+		Bold(true)
 
 	subtitleStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#383838"))
 
+	banner := `  _____ _           _     _____     _ _
+ / ____| |         | |   |_   _|   (_) |
+| |    | |__   __ _| |_    | | __ _ _| |___
+| |    | '_ \ / _' | __|   | |/ _' | | / __|
+| |____| | | | (_| | |_    | | (_| | | \__ \
+ \_____|_| |_|\__,_|\__|   |_|\__,_|_|_|___/`
+
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(titleStyle.Render("  Chat Tails"))
+	b.WriteString(bannerStyle.Render(banner))
 	b.WriteString("\n")
 	b.WriteString(subtitleStyle.Render("  Terminal chat over TCP & Tailscale"))
 	b.WriteString("\n\n")

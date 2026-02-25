@@ -109,13 +109,26 @@ func (c *Client) RunTUI(ctx context.Context) {
 	// Send telnet negotiation to enable character-at-a-time mode
 	c.conn.Write(telnetNegotiation)
 
+	// Brief pause to let telnet client process negotiation and send responses
+	time.Sleep(100 * time.Millisecond)
+
+	// Drain any IAC responses the telnet client sent back
+	if conn, ok := c.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+		conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		discard := make([]byte, 256)
+		c.conn.Read(discard)
+		conn.SetReadDeadline(time.Time{}) // Clear deadline
+	}
+
+	// Wrap the connection in a reader that filters telnet IAC sequences
+	filteredInput := &telnetFilterReader{reader: c.conn}
+
 	model := NewChatModel(c)
 
 	p := tea.NewProgram(
 		model,
-		tea.WithInput(c.conn),
+		tea.WithInput(filteredInput),
 		tea.WithOutput(c.conn),
-		tea.WithAltScreen(),
 	)
 	c.program = p
 
@@ -128,6 +141,45 @@ func (c *Client) RunTUI(ctx context.Context) {
 	if _, err := p.Run(); err != nil {
 		log.Printf("TUI error for %s: %v", c.Nickname, err)
 	}
+}
+
+// telnetFilterReader wraps an io.Reader and strips telnet IAC sequences.
+type telnetFilterReader struct {
+	reader io.Reader
+}
+
+func (r *telnetFilterReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n == 0 || err != nil {
+		return n, err
+	}
+
+	// Filter out telnet IAC sequences (0xFF followed by command bytes)
+	filtered := make([]byte, 0, n)
+	i := 0
+	for i < n {
+		if p[i] == 0xFF && i+1 < n {
+			// IAC followed by a command byte
+			cmd := p[i+1]
+			if cmd == 0xFF {
+				// Escaped 0xFF — keep one
+				filtered = append(filtered, 0xFF)
+				i += 2
+			} else if cmd >= 0xFB && cmd <= 0xFE {
+				// WILL/WONT/DO/DONT — skip 3 bytes (IAC + cmd + option)
+				i += 3
+			} else {
+				// Other IAC commands — skip 2 bytes
+				i += 2
+			}
+		} else {
+			filtered = append(filtered, p[i])
+			i++
+		}
+	}
+
+	copy(p, filtered)
+	return len(filtered), err
 }
 
 // --- Plain-text mode (legacy telnet) ---
