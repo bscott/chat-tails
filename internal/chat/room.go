@@ -147,7 +147,7 @@ func (r *Room) broadcastMessage(msg Message) {
 
 	for _, client := range r.clients {
 		if client != nil {
-			go client.sendMessage(msg) // Use goroutine to avoid blocking
+			go client.Send(msg) // Use goroutine to avoid blocking
 		}
 	}
 }
