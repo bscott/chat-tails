@@ -112,7 +112,7 @@ func FormatTitle(title string) string {
 
 // CreateColoredBox creates a colored box with a title and content
 func CreateColoredBox(title, content string, width int) string {
-	box := BoxStyle.Copy().Width(width)
+	box := BoxStyle.Width(width)
 	return box.Render(
 		HeaderStyle.Render(title) + "\n\n" +
 		content,

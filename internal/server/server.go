@@ -30,7 +30,6 @@ type Server struct {
 func NewServer(cfg Config) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Create a new chat room
 	room := chat.NewRoom(cfg.RoomName, cfg.MaxUsers, cfg.EnableHistory, cfg.HistorySize, cfg.PlainText)
 
 	return &Server{
@@ -46,22 +45,18 @@ func NewServer(cfg Config) (*Server, error) {
 func (s *Server) Start() error {
 	var listener net.Listener
 	var err error
-	
+
 	if s.config.EnableTailscale {
-		// Start the tsnet Tailscale server
 		s.tsServer = &tsnet.Server{
 			Hostname: s.config.HostName,
 			AuthKey:  os.Getenv("TS_AUTHKEY"),
 		}
 
-		// Bring up the Tailscale node before listening
-		// This ensures proper authentication with the authkey
 		log.Printf("Connecting to Tailscale network...")
 		if _, err := s.tsServer.Up(s.ctx); err != nil {
 			return fmt.Errorf("failed to start Tailscale node: %w", err)
 		}
 
-		// Get Tailscale status to show DNS name
 		ln, err := s.tsServer.LocalClient()
 		if err != nil {
 			log.Printf("Warning: unable to get Tailscale local client: %v", err)
@@ -76,34 +71,30 @@ func (s *Server) Start() error {
 			}
 		}
 
-		// Listen on the specified port
 		listener, err = s.tsServer.Listen("tcp", fmt.Sprintf(":%d", s.config.Port))
 		if err != nil {
 			return fmt.Errorf("failed to start Tailscale server on port %d: %w", s.config.Port, err)
 		}
 	} else {
-		// Start a regular TCP server
 		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", s.config.Port))
 		if err != nil {
 			return fmt.Errorf("failed to listen on port %d: %w", s.config.Port, err)
 		}
 	}
-	
+
 	s.listener = listener
-	
+
 	log.Printf("Server started on port %d (room: %s, max users: %d)", s.config.Port, s.config.RoomName, s.config.MaxUsers)
-	
-	// Accept connections
+
 	s.wg.Add(1)
 	go s.acceptConnections()
-	
+
 	return nil
 }
 
-// acceptConnections accepts incoming connections
 func (s *Server) acceptConnections() {
 	defer s.wg.Done()
-	
+
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -111,7 +102,6 @@ func (s *Server) acceptConnections() {
 		default:
 			conn, err := s.listener.Accept()
 			if err != nil {
-				// Check if server is shutting down
 				select {
 				case <-s.ctx.Done():
 					return
@@ -120,43 +110,58 @@ func (s *Server) acceptConnections() {
 					continue
 				}
 			}
-			
-			// Handle the connection in a new goroutine
+
 			s.wg.Add(1)
 			go s.handleConnection(conn)
 		}
 	}
 }
 
-// handleConnection handles a client connection
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
 	defer conn.Close()
-	
+
 	remoteAddr := conn.RemoteAddr().String()
 	log.Printf("New connection from %s", remoteAddr)
-	
-	// Register connection
+
 	s.mu.Lock()
 	s.connections[remoteAddr] = conn
 	s.mu.Unlock()
-	
-	// Deregister connection when done
+
 	defer func() {
 		s.mu.Lock()
 		delete(s.connections, remoteAddr)
 		s.mu.Unlock()
 		log.Printf("Connection from %s closed", remoteAddr)
 	}()
-	
-	// Create a new client
-	client, err := chat.NewClient(conn, s.chatRoom)
+
+	if s.config.PlainText {
+		s.handlePlainText(conn)
+	} else {
+		s.handleTUI(conn)
+	}
+}
+
+// handleTUI runs a bubbletea program for the connection.
+func (s *Server) handleTUI(conn net.Conn) {
+	client := chat.NewTUIClient(conn, s.chatRoom)
+
+	client.RunTUI(s.ctx)
+
+	// Leave room on disconnect if nickname was set
+	if client.Nickname != "" {
+		s.chatRoom.Leave(client)
+	}
+}
+
+// handlePlainText uses the legacy line-mode handler.
+func (s *Server) handlePlainText(conn net.Conn) {
+	client, err := chat.NewPlainTextClient(conn, s.chatRoom)
 	if err != nil {
 		log.Printf("Error creating client: %v", err)
 		return
 	}
-	
-	// Handle the client
+
 	client.Handle(s.ctx)
 }
 
@@ -164,38 +169,32 @@ func (s *Server) handleConnection(conn net.Conn) {
 func (s *Server) Stop() error {
 	log.Print("Stopping chat server...")
 
-	// Cancel the context to signal shutdown to all handlers
 	s.cancel()
 
-	// Close the listener first to stop accepting new connections
 	if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
 			log.Printf("Error closing listener: %v", err)
 		}
 	}
 
-	// Close all active connections to unblock client handlers
 	s.mu.Lock()
 	for _, conn := range s.connections {
 		conn.Close()
 	}
 	s.mu.Unlock()
 
-	// Stop the chat room (this will now complete quickly since clients are disconnected)
 	if s.chatRoom != nil {
 		if err := s.chatRoom.Stop(); err != nil {
 			log.Printf("Error stopping chat room: %v", err)
 		}
 	}
 
-	// Close the tsnet server if in Tailscale mode
 	if s.config.EnableTailscale && s.tsServer != nil {
 		if err := s.tsServer.Close(); err != nil {
 			log.Printf("Error closing Tailscale node: %v", err)
 		}
 	}
 
-	// Wait for all goroutines to finish with a timeout
 	done := make(chan struct{})
 	go func() {
 		s.wg.Wait()
@@ -211,3 +210,4 @@ func (s *Server) Stop() error {
 
 	return nil
 }
+
