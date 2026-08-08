@@ -17,7 +17,7 @@ clean:
 
 # Run tests
 test:
-	go test -v ./internal/chat/
+	go test -v ./...
 
 # Build Docker image
 docker-build:
