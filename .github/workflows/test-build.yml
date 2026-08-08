@@ -7,6 +7,8 @@ on:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
+      - 'Makefile'
+      - 'install/**'
       - 'Dockerfile'
       - '.github/workflows/**'
 
@@ -37,16 +39,19 @@ jobs:
         run: go mod verify
 
       - name: Build
-        run: go build -v ./cmd/chat-tails
+        run: make build
+
+      - name: Run vet
+        run: go vet ./...
 
       - name: Run tests
-        run: go test -v ./...
+        run: make test
 
       - name: Get version info
         id: version
         run: |
-          echo "git_tag=${GITHUB_REF_NAME:-dev}" >> $GITHUB_OUTPUT
-          echo "git_commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "git_tag=${GITHUB_REF_NAME:-dev}" >> "$GITHUB_OUTPUT"
+          echo "git_commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
