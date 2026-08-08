@@ -204,10 +204,8 @@ func (s *Server) Stop() error {
 	select {
 	case <-done:
 		log.Print("Chat server stopped")
+		return nil
 	case <-time.After(5 * time.Second):
-		log.Print("Chat server stopped (timeout waiting for goroutines)")
+		return fmt.Errorf("timed out waiting for server goroutines to stop")
 	}
-
-	return nil
 }
-
