@@ -7,6 +7,8 @@ on:
       - '**.go'
       - 'go.mod'
       - 'go.sum'
+      - 'Makefile'
+      - 'install/**'
       - 'Dockerfile'
       - '.github/workflows/**'
 
@@ -22,10 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.24'
           cache: true
@@ -37,25 +39,28 @@ jobs:
         run: go mod verify
 
       - name: Build
-        run: go build -v ./cmd/chat-tails
+        run: make build
+
+      - name: Run vet
+        run: go vet ./...
 
       - name: Run tests
-        run: go test -v ./...
+        run: make test
 
       - name: Get version info
         id: version
         run: |
-          echo "git_tag=${GITHUB_REF_NAME:-dev}" >> $GITHUB_OUTPUT
-          echo "git_commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "git_tag=${GITHUB_REF_NAME:-dev}" >> "$GITHUB_OUTPUT"
+          echo "git_commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Test Docker build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
