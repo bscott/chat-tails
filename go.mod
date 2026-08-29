@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/spf13/pflag v1.0.5
+	golang.org/x/term v0.29.0
 	tailscale.com v1.82.5
 )
 
@@ -98,7 +99,6 @@ require (
 	golang.org/x/net v0.36.0 // indirect
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/term v0.29.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
 	golang.org/x/tools v0.30.0 // indirect

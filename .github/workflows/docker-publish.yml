@@ -48,6 +48,57 @@ jobs:
       - name: Run tests
         run: make test
 
+  build-binaries:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: ''
+          - goos: linux
+            goarch: arm64
+            suffix: ''
+          - goos: darwin
+            goarch: amd64
+            suffix: ''
+          - goos: darwin
+            goarch: arm64
+            suffix: ''
+          - goos: windows
+            goarch: amd64
+            suffix: .exe
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build release binary
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          OUTPUT_SUFFIX: ${{ matrix.suffix }}
+        run: |
+          mkdir -p dist
+          go build -trimpath \
+            -ldflags="-s -w -X main.Version=${GITHUB_REF_NAME:-dev} -X main.Commit=${GITHUB_SHA::7}" \
+            -o "dist/chat-tails-${GOOS}-${GOARCH}${OUTPUT_SUFFIX}" \
+            ./cmd/chat-tails
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
@@ -100,13 +151,36 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Create GitHub Release
-        if: github.ref_type == 'tag'
+
+  publish-release:
+    if: github.ref_type == 'tag'
+    needs:
+      - build-and-push
+      - build-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum chat-tails-* > SHA256SUMS
+
+      - name: Create release and upload binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists; leaving its notes unchanged."
           else
             gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
           fi
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber

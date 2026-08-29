@@ -1,0 +1,25 @@
+name: chat-tails
+
+services:
+  chat-tails:
+    image: ghcr.io/bscott/chat-tails:${CHAT_TAILS_VERSION:-latest}
+    build:
+      context: .
+      args:
+        GIT_TAG: ${CHAT_TAILS_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${PORT:-2323}:${PORT:-2323}/tcp"
+    environment:
+      PORT: "${PORT:-2323}"
+      ROOM_NAME: "${ROOM_NAME:-Chat Room}"
+      MAX_USERS: "${MAX_USERS:-10}"
+      TS_AUTHKEY: "${TS_AUTHKEY:-}"
+      TS_HOSTNAME: "${TS_HOSTNAME:-chatroom}"
+    volumes:
+      - tsnet-state:/root/.config/tsnet-chat-tails
+
+volumes:
+  tsnet-state:

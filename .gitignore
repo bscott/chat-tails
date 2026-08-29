@@ -1,5 +1,6 @@
 **/.claude/settings.local.json
-chat-server
+/chat-tails
+/chat-tails-*
 
 # Binaries for programs and plugins
 *.exe

@@ -1,7 +1,7 @@
 .PHONY: build run clean test docker-build docker-run
 
 # Binary output
-BINARY_NAME=chat-server
+BINARY_NAME=chat-tails
 
 # Build the application
 build:
@@ -21,11 +21,11 @@ test:
 
 # Build Docker image
 docker-build:
-	docker build -t chat-server .
+	docker build -t chat-tails .
 
 # Run Docker container
 docker-run: docker-build
-	docker run -p 2323:2323 chat-server
+	docker run -p 2323:2323 chat-tails
 
 # Cross-compile for different platforms
 build-all: build-linux build-macos build-windows build-arm

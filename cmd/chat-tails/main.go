@@ -39,12 +39,22 @@ type config struct {
 
 func main() {
 	// Parse command-line flags
-	cfg, showVersion := parseFlags()
+	cfg, clientOpts, showVersion := parseFlags()
 
 	// Handle --version flag
 	if showVersion {
 		fmt.Printf("Chat Tails %s (commit: %s)\n", Version, Commit)
 		os.Exit(0)
+	}
+
+	if err := validateClientFlags(clientOpts, cfg.Port, pflag.CommandLine.Changed); err != nil {
+		fmt.Fprintf(os.Stderr, "chat-tails: %v\n", err)
+		pflag.Usage()
+		os.Exit(2)
+	}
+
+	if clientOpts.Enabled {
+		os.Exit(runClient(clientOpts.Host, cfg.Port))
 	}
 
 	// Setup logger
@@ -85,6 +95,7 @@ func main() {
 
 	if host, port, ok := chatServer.ConnectionAddress(); ok {
 		log.Printf("Chat server started. Users can connect via: telnet %s %d", host, port)
+		log.Printf("Or with the built-in client: chat-tails --client --host %s --port %d", host, port)
 	} else {
 		log.Print("Chat server started, but its connection address could not be determined")
 	}
@@ -103,20 +114,12 @@ func main() {
 	os.Exit(0)
 }
 
-func parseFlags() (config, bool) {
+func parseFlags() (config, clientOptions, bool) {
 	var cfg config
+	var clientOpts clientOptions
 	var showVersion bool
 
-	// Define command-line flags
-	pflag.IntVarP(&cfg.Port, "port", "p", defaultPort, "TCP port to listen on")
-	pflag.StringVarP(&cfg.RoomName, "room-name", "r", defaultRoomName, "Chat room name")
-	pflag.IntVarP(&cfg.MaxUsers, "max-users", "m", defaultMaxUsers, "Maximum allowed users")
-	pflag.BoolVarP(&cfg.EnableTailscale, "tailscale", "t", false, "Enable Tailscale mode")
-	pflag.StringVarP(&cfg.HostName, "hostname", "H", defaultHostname, "Tailscale hostname (only used if --tailscale is enabled)")
-	pflag.BoolVar(&cfg.EnableHistory, "history", false, "Enable message history for new users")
-	pflag.IntVar(&cfg.HistorySize, "history-size", defaultHistorySize, "Number of messages to keep in history")
-	pflag.BoolVar(&cfg.PlainText, "plain-text", false, "Disable ANSI formatting (for Windows telnet compatibility)")
-	pflag.BoolVarP(&showVersion, "version", "v", false, "Show version information")
+	defineFlags(pflag.CommandLine, &cfg, &clientOpts, &showVersion)
 
 	// Display help message
 	pflag.Usage = func() {
@@ -126,5 +129,19 @@ func parseFlags() (config, bool) {
 	}
 
 	pflag.Parse()
-	return cfg, showVersion
+	return cfg, clientOpts, showVersion
+}
+
+func defineFlags(flags *pflag.FlagSet, cfg *config, clientOpts *clientOptions, showVersion *bool) {
+	flags.IntVarP(&cfg.Port, "port", "p", defaultPort, "TCP port to listen on (or connect to with --client)")
+	flags.BoolVar(&clientOpts.Enabled, "client", false, "Connect to a chat server instead of running one")
+	flags.StringVar(&clientOpts.Host, "host", "", "Server address to connect to (requires --client)")
+	flags.StringVarP(&cfg.RoomName, "room-name", "r", defaultRoomName, "Chat room name")
+	flags.IntVarP(&cfg.MaxUsers, "max-users", "m", defaultMaxUsers, "Maximum allowed users")
+	flags.BoolVarP(&cfg.EnableTailscale, "tailscale", "t", false, "Enable Tailscale mode")
+	flags.StringVarP(&cfg.HostName, "hostname", "H", defaultHostname, "Tailscale hostname (only used if --tailscale is enabled)")
+	flags.BoolVar(&cfg.EnableHistory, "history", false, "Enable message history for new users")
+	flags.IntVar(&cfg.HistorySize, "history-size", defaultHistorySize, "Number of messages to keep in history")
+	flags.BoolVar(&cfg.PlainText, "plain-text", false, "Disable ANSI formatting (for Windows telnet compatibility)")
+	flags.BoolVarP(showVersion, "version", "v", false, "Show version information")
 }

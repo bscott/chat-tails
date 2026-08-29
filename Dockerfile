@@ -18,7 +18,7 @@ COPY . .
 # Build the application with version info
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-X main.Version=${GIT_TAG} -X main.Commit=${GIT_COMMIT}" \
-    -o chat-server ./cmd/chat-tails
+    -o chat-tails ./cmd/chat-tails
 
 # Create final lightweight image
 FROM alpine:latest
@@ -26,7 +26,7 @@ FROM alpine:latest
 WORKDIR /app
 
 # Copy the binary from the builder stage
-COPY --from=builder /app/chat-server .
+COPY --from=builder /app/chat-tails .
 
 # Set environment variables
 ENV PORT=2323 \

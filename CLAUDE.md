@@ -6,12 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build the binary
-make build              # or: go build -o chat-server ./cmd/ts-chat
+make build              # or: go build -o chat-tails ./cmd/chat-tails
 
 # Run the server
 make run                # builds and runs
-./chat-server           # run directly
-./chat-server --plain-text  # run with plain-text mode (Windows telnet compatibility)
+./chat-tails           # run directly
+./chat-tails --plain-text  # run with plain-text mode (Windows telnet compatibility)
 
 # Run tests
 make test               # runs: go test -v ./...

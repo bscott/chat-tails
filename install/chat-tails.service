@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=nobody
-ExecStart=/usr/local/bin/chat-server
+ExecStart=/usr/local/bin/chat-tails
 Restart=on-failure
 RestartSec=5
 Environment=PORT=2323

@@ -110,14 +110,16 @@ func (r *Room) addClient(c *Client) error {
 	r.clients[c.Nickname] = c
 	r.mu.Unlock()
 
-	// Notify everyone that a new user has joined (outside of lock to avoid deadlock)
+	// Notify everyone that a new user has joined (outside of lock to avoid deadlock).
+	// The joiner is skipped: it already sees the event via history, so a live
+	// copy would render the same join twice.
 	systemMsg := Message{
 		From:      "System",
 		Content:   fmt.Sprintf("%s has joined the room", c.Nickname),
 		Timestamp: time.Now(),
 		IsSystem:  true,
 	}
-	r.broadcastMessage(systemMsg)
+	r.broadcastMessageExcept(systemMsg, c)
 	return nil
 }
 
@@ -146,6 +148,12 @@ func (r *Room) removeClient(c *Client) {
 
 // broadcastMessage sends a message to all clients
 func (r *Room) broadcastMessage(msg Message) {
+	r.broadcastMessageExcept(msg, nil)
+}
+
+// broadcastMessageExcept stores a message and delivers it live to every
+// client except the given one.
+func (r *Room) broadcastMessageExcept(msg Message, except *Client) {
 	// Store in history if enabled (for non-system messages or join/leave messages)
 	if r.enableHistory {
 		r.addToHistory(msg)
@@ -155,7 +163,7 @@ func (r *Room) broadcastMessage(msg Message) {
 	defer r.mu.RUnlock()
 
 	for _, client := range r.clients {
-		if client != nil {
+		if client != nil && client != except {
 			go client.Send(msg) // Use goroutine to avoid blocking
 		}
 	}

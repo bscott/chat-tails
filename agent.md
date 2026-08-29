@@ -9,7 +9,7 @@ Terminal chat server in Go with optional Tailscale networking. Users connect via
 | Task | Command |
 |------|---------|
 | Build | `make build` |
-| Run | `make run` or `./chat-server` |
+| Run | `make run` or `./chat-tails` |
 | Test | `make test` |
 | Single test | `go test -v -run TestName ./internal/chat/` |
 

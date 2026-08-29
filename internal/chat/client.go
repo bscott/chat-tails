@@ -111,7 +111,7 @@ func (c *Client) RunTUI(ctx context.Context) {
 	// Keep telnet character-at-a-time negotiation, but parse responses from the
 	// first input byte so ordinary client input is never drained with them.
 	c.conn.Write(telnetNegotiation)
-	filteredInput := &telnetFilterReader{reader: c.conn}
+	filteredInput := NewTelnetFilterReader(c.conn)
 
 	model := NewChatModel(c)
 
@@ -128,6 +128,13 @@ func (c *Client) RunTUI(ctx context.Context) {
 	if _, err := p.Run(); err != nil {
 		log.Printf("TUI error for %s: %v", c.Nickname, err)
 	}
+}
+
+// NewTelnetFilterReader wraps r in a reader that strips telnet IAC
+// negotiation, commands, and subnegotiation from the stream, unescaping
+// IAC IAC to a literal 0xff. State survives fragmented reads.
+func NewTelnetFilterReader(r io.Reader) io.Reader {
+	return &telnetFilterReader{reader: r}
 }
 
 // telnetFilterReader wraps an io.Reader and strips telnet IAC sequences.

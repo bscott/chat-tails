@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -175,6 +176,85 @@ func TestMessageStruct(t *testing.T) {
 	if msg.From != "Alice" || msg.Content != "Hello" || !msg.IsSystem || msg.IsAction {
 		t.Fatalf("unexpected message: %#v", msg)
 	}
+}
+
+func TestJoinBroadcastSkipsJoiner(t *testing.T) {
+	room := NewRoom("Test Room", 5, true, 10, true)
+	t.Cleanup(func() { _ = room.Stop() })
+
+	alice, aliceConn := newCapturingClient(room, "alice")
+	room.ReserveNickname(alice.Nickname)
+	if err := room.Join(alice); err != nil {
+		t.Fatalf("join alice: %v", err)
+	}
+
+	bob, bobConn := newCapturingClient(room, "bob")
+	room.ReserveNickname(bob.Nickname)
+	if err := room.Join(bob); err != nil {
+		t.Fatalf("join bob: %v", err)
+	}
+
+	// Other occupants still receive the live join notice.
+	waitForOutput(t, aliceConn, "bob has joined the room")
+
+	// Prove bob's delivery path works before asserting the negative.
+	room.Broadcast(Message{From: "alice", Content: "delivery-marker", Timestamp: time.Now()})
+	waitForOutput(t, bobConn, "delivery-marker")
+
+	if strings.Contains(bobConn.outputString(), "bob has joined the room") {
+		t.Fatalf("joiner received a live copy of its own join notice: %q", bobConn.outputString())
+	}
+	if strings.Contains(aliceConn.outputString(), "alice has joined the room") {
+		t.Fatalf("first joiner received its own join notice: %q", aliceConn.outputString())
+	}
+}
+
+func TestJoinRecordedOnceInHistory(t *testing.T) {
+	room := NewRoom("Test Room", 5, true, 10, true)
+	t.Cleanup(func() { _ = room.Stop() })
+
+	client := newRoomTestClient(room, "alice")
+	room.ReserveNickname(client.Nickname)
+	if err := room.Join(client); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+
+	// History is written before Join returns, so this is race-free.
+	joins := 0
+	for _, msg := range room.GetHistory() {
+		if strings.Contains(msg.Content, "alice has joined the room") {
+			joins++
+		}
+	}
+	if joins != 1 {
+		t.Fatalf("history records the join %d times, want exactly 1", joins)
+	}
+}
+
+// newCapturingClient builds a plain-text client whose outbound writes can be
+// inspected by tests.
+func newCapturingClient(room *Room, nickname string) (*Client, *scriptedConn) {
+	conn := newScriptedConn("")
+	client := &Client{
+		Nickname: nickname,
+		conn:     conn,
+		writer:   bufio.NewWriter(conn),
+		room:     room,
+	}
+	return client, conn
+}
+
+// waitForOutput waits for asynchronously delivered broadcast output.
+func waitForOutput(t *testing.T, conn *scriptedConn, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(conn.outputString(), want) {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("output never contained %q: %q", want, conn.outputString())
 }
 
 func newRoomTestClient(room *Room, nickname string) *Client {
