@@ -32,7 +32,8 @@ COPY --from=builder /app/chat-server .
 ENV PORT=2323 \
     ROOM_NAME="Chat Room" \
     MAX_USERS=10 \
-    TS_AUTHKEY=""
+    TS_AUTHKEY="" \
+    TS_HOSTNAME="chatroom"
 
 # Expose the port
 EXPOSE ${PORT}

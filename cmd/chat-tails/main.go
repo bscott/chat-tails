@@ -53,8 +53,8 @@ func main() {
 	log.Printf("Chat Tails %s (commit: %s)", Version, Commit)
 
 	if cfg.EnableTailscale {
-		log.Printf("Starting with hostname: %s, port: %d", cfg.HostName, cfg.Port)
-		
+		log.Printf("Starting with requested hostname: %s, port: %d", cfg.HostName, cfg.Port)
+
 		// Check for auth key
 		if os.Getenv("TS_AUTHKEY") == "" {
 			log.Println("Warning: TS_AUTHKEY environment variable not set. Tailscale mode may not work properly.")
@@ -79,19 +79,16 @@ func main() {
 		log.Fatalf("Failed to create server: %v", err)
 	}
 
-	// Start the server
-	go func() {
-		if err := chatServer.Start(); err != nil {
-			log.Fatalf("Server error: %v", err)
-		}
-	}()
-
-	if cfg.EnableTailscale {
-		log.Printf("Chat server started. Users can connect via: telnet %s.ts.net %d", cfg.HostName, cfg.Port)
-	} else {
-		log.Printf("Chat server started. Users can connect via: telnet localhost %d", cfg.Port)
+	if err := chatServer.Start(); err != nil {
+		log.Fatalf("Server error: %v", err)
 	}
-	
+
+	if host, port, ok := chatServer.ConnectionAddress(); ok {
+		log.Printf("Chat server started. Users can connect via: telnet %s %d", host, port)
+	} else {
+		log.Print("Chat server started, but its connection address could not be determined")
+	}
+
 	log.Print("Press Ctrl+C to stop the server")
 
 	// Wait for interrupt signal

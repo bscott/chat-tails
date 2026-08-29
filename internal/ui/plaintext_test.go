@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 func TestPlainFormatters(t *testing.T) {
@@ -62,6 +63,32 @@ func TestPlainFormattersPreserveUnicodeContent(t *testing.T) {
 	got := FormatUserMessagePlain("josé", "hello 世界", "09:41")
 	if want := "[09:41] josé: hello 世界"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
+func TestPlainFormattersSanitizeEveryDynamicOperand(t *testing.T) {
+	attack := "safe\x1b[2J\x1b]0;owned\x07\r\b\u009b\x00\x7f 世界\nnext"
+	outputs := map[string]string{
+		"system":    FormatSystemMessagePlain(attack),
+		"user":      FormatUserMessagePlain(attack, attack, attack),
+		"self":      FormatSelfMessagePlain(attack, attack),
+		"action":    FormatActionMessagePlain(attack, attack),
+		"title":     FormatTitlePlain(attack),
+		"user list": FormatUserListPlain(attack, []string{attack}, 10),
+		"welcome":   FormatWelcomeMessagePlain(attack, attack),
+	}
+
+	for name, output := range outputs {
+		t.Run(name, func(t *testing.T) {
+			for _, r := range output {
+				if r != '\n' && unicode.IsControl(r) {
+					t.Fatalf("plain output retained terminal control %U: %q", r, output)
+				}
+			}
+			if !strings.Contains(output, "世界") || !strings.Contains(output, "\n") {
+				t.Fatalf("sanitized output lost printable Unicode or newline: %q", output)
+			}
+		})
 	}
 }
 

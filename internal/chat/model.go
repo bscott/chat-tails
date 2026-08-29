@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -19,6 +20,11 @@ const (
 	stateNickname modelState = iota
 	stateChat
 )
+
+// Keep per-client rendering bounded independently of server history settings.
+const maxTUIMessageHistory = 50
+
+type roomClosedMsg struct{}
 
 // ChatModel is the bubbletea model for a single client connection.
 type ChatModel struct {
@@ -90,6 +96,12 @@ func (m ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errMsg = "Room is full. Disconnecting..."
 		m.quitting = true
 		return m, tea.Quit
+
+	case roomClosedMsg:
+		m.errMsg = "Room is closed. Disconnecting..."
+		m.quitting = true
+		return m, tea.Quit
+
 	}
 
 	return m, nil
@@ -151,11 +163,19 @@ func (m ChatModel) updateNickname(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m ChatModel) joinRoomCmd() tea.Cmd {
 	client := m.client
 	return func() tea.Msg {
-		client.room.Join(client)
-		if client.fullRoomRejection {
+		err := client.room.Join(client)
+		switch {
+		case err == nil:
+			if client.disconnected.Load() {
+				client.room.Leave(client)
+				return roomClosedMsg{}
+			}
+			return JoinedMsg{}
+		case errors.Is(err, ErrRoomFull):
 			return RoomFullMsg{}
+		default:
+			return roomClosedMsg{}
 		}
-		return JoinedMsg{}
 	}
 }
 
@@ -187,7 +207,7 @@ func (m ChatModel) nicknameView() string {
 
 	if m.errMsg != "" {
 		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#F25D94"))
-		b.WriteString("  " + errStyle.Render(m.errMsg))
+		b.WriteString("  " + errStyle.Render(ui.SanitizeTerminalText(m.errMsg)))
 		b.WriteString("\n\n")
 	}
 
@@ -211,11 +231,8 @@ func (m ChatModel) handleJoined() (tea.Model, tea.Cmd) {
 	m.textInput.Width = m.width - 4
 	m.textInput.Reset()
 
-	// Load message history
-	history := m.client.room.GetHistory()
-	for _, msg := range history {
-		m.messages = append(m.messages, msg)
-	}
+	// Load message history.
+	m.appendMessages(m.client.room.GetHistory()...)
 	m.updateViewportContent()
 
 	return m, nil
@@ -318,8 +335,8 @@ func (m *ChatModel) handleCommand(cmd string) (tea.Model, tea.Cmd) {
 }
 
 func (m ChatModel) handleChatMsg(msg ChatMsg) (tea.Model, tea.Cmd) {
-	m.messages = append(m.messages, msg.Message)
 	wasAtBottom := m.viewport.AtBottom()
+	m.appendMessages(msg.Message)
 	m.updateViewportContent()
 	if wasAtBottom {
 		m.viewport.GotoBottom()
@@ -354,6 +371,20 @@ func (m *ChatModel) resizeViewport() {
 	m.textInput.Width = m.width - 4
 }
 
+func (m *ChatModel) appendMessages(messages ...Message) {
+	if len(messages) >= maxTUIMessageHistory {
+		m.messages = append(m.messages[:0], messages[len(messages)-maxTUIMessageHistory:]...)
+		return
+	}
+
+	overflow := len(m.messages) + len(messages) - maxTUIMessageHistory
+	if overflow > 0 {
+		copy(m.messages, m.messages[overflow:])
+		m.messages = m.messages[:len(m.messages)-overflow]
+	}
+	m.messages = append(m.messages, messages...)
+}
+
 func (m *ChatModel) updateViewportContent() {
 	var lines []string
 	for _, msg := range m.messages {
@@ -381,7 +412,7 @@ func (m *ChatModel) appendSystemMessage(content string) {
 		Timestamp: time.Now(),
 		IsSystem:  true,
 	}
-	m.messages = append(m.messages, msg)
+	m.appendMessages(msg)
 	m.updateViewportContent()
 	m.viewport.GotoBottom()
 }
@@ -405,8 +436,8 @@ func (m ChatModel) chatView() string {
 		Padding(0, 1)
 
 	users := m.client.room.GetUserList()
-	statusLeft := statusStyle.Render(m.client.room.Name)
-	statusRight := statusInfoStyle.Render(fmt.Sprintf("%s | %d online", m.client.Nickname, len(users)))
+	statusLeft := statusStyle.Render(ui.SanitizeTerminalText(m.client.room.Name))
+	statusRight := statusInfoStyle.Render(fmt.Sprintf("%s | %d online", ui.SanitizeTerminalText(m.client.Nickname), len(users)))
 
 	statusGap := m.width - lipgloss.Width(statusLeft) - lipgloss.Width(statusRight)
 	if statusGap < 0 {

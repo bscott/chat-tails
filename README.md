@@ -25,10 +25,8 @@ export TS_AUTHKEY=tskey-auth-xxxxx
 ./chat-server --tailscale --hostname mychat --history
 ```
 
-Connect from any machine:
-```bash
-nc mychat.your-tailnet.ts.net 2323
-```
+After startup, copy the `telnet` command printed by Chat Tails. Tailscale assigns
+the authoritative MagicDNS name, which may differ from the requested node name.
 
 ## Installation
 
@@ -50,14 +48,28 @@ docker build -t chat-tails .
 docker run -p 2323:2323 chat-tails
 
 # Run with Tailscale
-docker run -e TS_AUTHKEY=tskey-auth-xxxxx chat-tails --tailscale --hostname mychat
+docker run -e TS_AUTHKEY=tskey-auth-xxxxx -e TS_HOSTNAME=mychat chat-tails
 ```
+
+Docker configuration uses dedicated environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | 2323 | TCP port to listen on |
+| `ROOM_NAME` | "Chat Room" | Name displayed in the chat |
+| `MAX_USERS` | 10 | Maximum concurrent users |
+| `TS_AUTHKEY` | empty | Enables Tailscale mode when set |
+| `TS_HOSTNAME` | "chatroom" | Requested Tailscale node name |
+
+`TS_HOSTNAME` is intentionally separate from Docker's reserved `HOSTNAME`
+variable; `HOSTNAME` is ignored. The requested node name is not necessarily the
+final MagicDNS name, so use the address printed after startup.
 
 ## Configuration
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--port` | `-p` | 2323 | TCP port to listen on |
+| `--port` | `-p` | 2323 | TCP port to listen on (0 selects an ephemeral port) |
 | `--room-name` | `-r` | "Chat Room" | Name displayed in the chat |
 | `--max-users` | `-m` | 10 | Maximum concurrent users |
 | `--tailscale` | `-t` | false | Enable Tailscale mode |
@@ -93,10 +105,9 @@ This disables all ANSI color codes and cursor control sequences for a better exp
    ```bash
    ./chat-server --tailscale --hostname mychat
    ```
-4. Share with others on your Tailnet - they connect with:
-   ```bash
-   nc mychat.your-tailnet.ts.net 2323
-   ```
+4. Copy the connection command printed after startup. It contains the actual
+   MagicDNS name assigned by Tailscale; do not construct a `.ts.net` name from
+   the requested hostname.
 
 ### Troubleshooting
 

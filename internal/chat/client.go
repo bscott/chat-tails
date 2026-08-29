@@ -9,6 +9,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -75,10 +76,10 @@ type Client struct {
 	writer            *bufio.Writer
 	room              *Room
 	mu                sync.Mutex
-	fullRoomRejection bool
 	messageTimestamps []time.Time
 	rateLimitMu       sync.Mutex
 	program           *tea.Program // set in TUI mode, nil in plain-text mode
+	disconnected      atomic.Bool
 }
 
 // NewTUIClient creates a client for TUI (bubbletea) mode.
@@ -106,21 +107,10 @@ func (c *Client) Send(msg Message) {
 // RunTUI starts the bubbletea program for this client over the TCP connection.
 // It blocks until the user quits.
 func (c *Client) RunTUI(ctx context.Context) {
-	// Send telnet negotiation to enable character-at-a-time mode
+	defer c.disconnected.Store(true)
+	// Keep telnet character-at-a-time negotiation, but parse responses from the
+	// first input byte so ordinary client input is never drained with them.
 	c.conn.Write(telnetNegotiation)
-
-	// Brief pause to let telnet client process negotiation and send responses
-	time.Sleep(100 * time.Millisecond)
-
-	// Drain any IAC responses the telnet client sent back
-	if conn, ok := c.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
-		conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-		discard := make([]byte, 256)
-		c.conn.Read(discard)
-		conn.SetReadDeadline(time.Time{}) // Clear deadline
-	}
-
-	// Wrap the connection in a reader that filters telnet IAC sequences
 	filteredInput := &telnetFilterReader{reader: c.conn}
 
 	model := NewChatModel(c)
@@ -132,11 +122,8 @@ func (c *Client) RunTUI(ctx context.Context) {
 	)
 	c.program = p
 
-	// Close connection when context is cancelled
-	go func() {
-		<-ctx.Done()
-		p.Quit()
-	}()
+	stopQuit := context.AfterFunc(ctx, p.Quit)
+	defer stopQuit()
 
 	if _, err := p.Run(); err != nil {
 		log.Printf("TUI error for %s: %v", c.Nickname, err)
@@ -145,53 +132,103 @@ func (c *Client) RunTUI(ctx context.Context) {
 
 // telnetFilterReader wraps an io.Reader and strips telnet IAC sequences.
 type telnetFilterReader struct {
-	reader io.Reader
+	reader     io.Reader
+	state      telnetFilterState
+	input      [512]byte
+	inputStart int
+	inputEnd   int
+	readErr    error
 }
 
+type telnetFilterState uint8
+
+const (
+	telnetData telnetFilterState = iota
+	telnetIAC
+	telnetOption
+	telnetSubnegotiation
+	telnetSubnegotiationIAC
+)
+
+const (
+	telnetByteIAC   = byte(255)
+	telnetCommandSB = byte(250)
+	telnetCommandSE = byte(240)
+)
+
 func (r *telnetFilterReader) Read(p []byte) (int, error) {
-	n, err := r.reader.Read(p)
-	if n == 0 || err != nil {
-		return n, err
+	if len(p) == 0 {
+		return 0, nil
 	}
 
-	// Filter out telnet IAC sequences (0xFF followed by command bytes)
-	filtered := make([]byte, 0, n)
-	i := 0
-	for i < n {
-		if p[i] == 0xFF && i+1 < n {
-			// IAC followed by a command byte
-			cmd := p[i+1]
-			if cmd == 0xFF {
-				// Escaped 0xFF — keep one
-				filtered = append(filtered, 0xFF)
-				i += 2
-			} else if cmd >= 0xFB && cmd <= 0xFE {
-				// WILL/WONT/DO/DONT — skip 3 bytes (IAC + cmd + option)
-				i += 3
-			} else {
-				// Other IAC commands — skip 2 bytes
-				i += 2
+	written := 0
+	for {
+		for r.inputStart < r.inputEnd && written < len(p) {
+			b := r.input[r.inputStart]
+			r.inputStart++
+
+			switch r.state {
+			case telnetData:
+				if b == telnetByteIAC {
+					r.state = telnetIAC
+				} else {
+					p[written] = b
+					written++
+				}
+			case telnetIAC:
+				switch {
+				case b == telnetByteIAC:
+					p[written] = b
+					written++
+					r.state = telnetData
+				case b == telnetCommandSB:
+					r.state = telnetSubnegotiation
+				case b >= 251 && b <= 254:
+					r.state = telnetOption
+				default:
+					r.state = telnetData
+				}
+			case telnetOption:
+				r.state = telnetData
+			case telnetSubnegotiation:
+				if b == telnetByteIAC {
+					r.state = telnetSubnegotiationIAC
+				}
+			case telnetSubnegotiationIAC:
+				if b == telnetCommandSE {
+					r.state = telnetData
+				} else {
+					r.state = telnetSubnegotiation
+				}
 			}
-		} else {
-			filtered = append(filtered, p[i])
-			i++
+		}
+
+		if written > 0 {
+			return written, nil
+		}
+		if r.inputStart < r.inputEnd {
+			continue
+		}
+		if r.readErr != nil {
+			return 0, r.readErr
+		}
+
+		r.inputStart = 0
+		r.inputEnd, r.readErr = r.reader.Read(r.input[:])
+		if r.inputEnd == 0 && r.readErr == nil {
+			return 0, io.ErrNoProgress
 		}
 	}
-
-	copy(p, filtered)
-	return len(filtered), err
 }
 
 // --- Plain-text mode (legacy telnet) ---
 
-// NewPlainTextClient creates a client for plain-text mode with nickname negotiation.
 func NewPlainTextClient(conn net.Conn, room *Room) (*Client, error) {
 	client := &Client{
 		conn:              conn,
 		reader:            bufio.NewReader(conn),
 		writer:            bufio.NewWriter(conn),
 		room:              room,
-		fullRoomRejection: false,
 		messageTimestamps: make([]time.Time, 0, MessageRateLimit*2),
 	}
 
@@ -200,11 +237,15 @@ func NewPlainTextClient(conn net.Conn, room *Room) (*Client, error) {
 		return nil, fmt.Errorf("nickname request failed: %w", err)
 	}
 
-	room.Join(client)
-
-	if client.fullRoomRejection {
+	if err := room.Join(client); err != nil {
+		switch err {
+		case ErrRoomFull:
+			client.sendSystemMessage("Sorry, the room is full. Try again later.")
+		case ErrRoomClosed:
+			client.sendSystemMessage("Sorry, the room is closed.")
+		}
 		conn.Close()
-		return nil, fmt.Errorf("room is full")
+		return nil, fmt.Errorf("join room: %w", err)
 	}
 
 	if err := client.sendWelcomeMessage(); err != nil {
@@ -328,16 +369,15 @@ func (c *Client) Handle(ctx context.Context) {
 		c.close()
 	}()
 
-	go func() {
-		<-ctx.Done()
-		c.close()
-	}()
+	conn := c.conn
+	stopClose := context.AfterFunc(ctx, c.close)
+	defer stopClose()
 
 	c.showPrompt()
 
 	for {
-		if conn, ok := c.conn.(interface{ SetReadDeadline(time.Time) error }); ok {
-			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		if deadlineConn, ok := conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+			deadlineConn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		}
 
 		line, err := c.reader.ReadString('\n')

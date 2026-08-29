@@ -52,6 +52,60 @@ func TestFormatUserListShowsOccupancyAndUsers(t *testing.T) {
 	}
 }
 
+func TestSanitizeTerminalText(t *testing.T) {
+	input := "ok\x1b[2Jx\x1b]0;owned\x07y\rOVER\b\u009b\x00\x7f 世界\nnext"
+	want := "ok[2Jx]0;ownedyOVER 世界\nnext"
+	if got := SanitizeTerminalText(input); got != want {
+		t.Fatalf("SanitizeTerminalText() = %q, want %q", got, want)
+	}
+
+	invalidUTF8 := string([]byte{'a', 0xff, 'b'})
+	if got := SanitizeTerminalText(invalidUTF8); got != "a�b" {
+		t.Fatalf("invalid UTF-8 sanitized to %q, want %q", got, "a�b")
+	}
+}
+
+func TestStyledFormattersSanitizeEveryDynamicOperand(t *testing.T) {
+	attack := "safe\x1b[2J\x1b]0;owned\x07\r\b\u009b\x00\x7f 世界\nnext"
+	outputs := map[string]string{
+		"system":    FormatSystemMessage(attack),
+		"user":      FormatUserMessage(attack, attack, attack),
+		"self":      FormatSelfMessage(attack, attack),
+		"action":    FormatActionMessage(attack, attack),
+		"title":     FormatTitle(attack),
+		"box":       CreateColoredBox(attack, attack, 40),
+		"user list": FormatUserList(attack, []string{attack}, 10),
+		"welcome":   FormatWelcomeMessage(attack, attack),
+	}
+
+	for name, output := range outputs {
+		t.Run(name, func(t *testing.T) {
+			assertNoInjectedTerminalControls(t, output)
+			if !strings.Contains(output, "世界") || !strings.Contains(output, "\n") {
+				t.Fatalf("sanitized output lost printable Unicode or newline: %q", output)
+			}
+		})
+	}
+}
+
+func assertNoInjectedTerminalControls(t *testing.T, output string) {
+	t.Helper()
+	for _, forbidden := range []string{
+		"\x1b[2J",
+		"\x1b]0;owned",
+		"\x07",
+		"\r",
+		"\b",
+		"\u009b",
+		"\x00",
+		"\x7f",
+	} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("output retained terminal control %q: %q", forbidden, output)
+		}
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

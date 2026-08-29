@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -16,18 +17,29 @@ type Message struct {
 	IsAction  bool
 }
 
+var (
+	ErrRoomFull   = errors.New("room is full")
+	ErrRoomClosed = errors.New("room is closed")
+)
+
+type joinRequest struct {
+	client *Client
+	result chan error
+}
+
 // Room represents a chat room
 type Room struct {
 	Name          string
 	MaxUsers      int
 	clients       map[string]*Client
 	broadcast     chan Message
-	join          chan *Client
+	join          chan joinRequest
 	leave         chan *Client
 	mu            sync.RWMutex
 	ctx           context.Context
 	cancel        context.CancelFunc
 	done          chan struct{}
+	stopOnce      sync.Once
 	enableHistory bool
 	historySize   int
 	history       []Message
@@ -43,7 +55,7 @@ func NewRoom(name string, maxUsers int, enableHistory bool, historySize int, pla
 		MaxUsers:      maxUsers,
 		clients:       make(map[string]*Client),
 		broadcast:     make(chan Message),
-		join:          make(chan *Client),
+		join:          make(chan joinRequest),
 		leave:         make(chan *Client),
 		ctx:           ctx,
 		cancel:        cancel,
@@ -65,8 +77,8 @@ func (r *Room) run() {
 		select {
 		case <-r.ctx.Done():
 			return
-		case client := <-r.join:
-			r.addClient(client)
+		case request := <-r.join:
+			request.result <- r.addClient(request.client)
 		case client := <-r.leave:
 			r.removeClient(client)
 		case msg := <-r.broadcast:
@@ -75,11 +87,10 @@ func (r *Room) run() {
 	}
 }
 
-// addClient adds a client to the room
-func (r *Room) addClient(c *Client) {
+// addClient adds a client to the room.
+func (r *Room) addClient(c *Client) error {
 	r.mu.Lock()
 
-	// Count actual clients (non-nil entries, excluding reservations)
 	activeClients := 0
 	for _, client := range r.clients {
 		if client != nil {
@@ -87,17 +98,12 @@ func (r *Room) addClient(c *Client) {
 		}
 	}
 
-	// Check if room is full
 	if activeClients >= r.MaxUsers {
-		// Remove the reservation since we can't add them
-		delete(r.clients, c.Nickname)
+		if client, exists := r.clients[c.Nickname]; exists && client == nil {
+			delete(r.clients, c.Nickname)
+		}
 		r.mu.Unlock()
-		// Send message but don't close connection here
-		// Connection handling should be done by the caller
-		c.sendSystemMessage("Sorry, the room is full. Try again later.")
-		// Signal that the client wasn't added by setting a flag
-		c.fullRoomRejection = true
-		return
+		return ErrRoomFull
 	}
 
 	// Add client to the room (replaces nil reservation with actual client)
@@ -112,14 +118,17 @@ func (r *Room) addClient(c *Client) {
 		IsSystem:  true,
 	}
 	r.broadcastMessage(systemMsg)
+	return nil
 }
 
 // removeClient removes a client from the room
 func (r *Room) removeClient(c *Client) {
 	r.mu.Lock()
-	_, exists := r.clients[c.Nickname]
-	if exists {
+	client, exists := r.clients[c.Nickname]
+	if exists && client == c {
 		delete(r.clients, c.Nickname)
+	} else {
+		exists = false
 	}
 	r.mu.Unlock()
 
@@ -176,12 +185,19 @@ func (r *Room) GetHistory() []Message {
 	return history
 }
 
-// Join adds a client to the room
-func (r *Room) Join(client *Client) {
+// Join adds a client to the room and waits for the admission decision.
+func (r *Room) Join(client *Client) error {
+	request := joinRequest{
+		client: client,
+		result: make(chan error, 1),
+	}
+
 	select {
-	case r.join <- client:
+	case r.join <- request:
+		return <-request.result
 	case <-r.ctx.Done():
-		// Room is shutting down, don't block
+		r.ReleaseNickname(client.Nickname)
+		return ErrRoomClosed
 	}
 }
 
@@ -207,12 +223,12 @@ func (r *Room) Broadcast(msg Message) {
 func (r *Room) GetUserList() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	users := make([]string, 0, len(r.clients))
 	for nickname := range r.clients {
 		users = append(users, nickname)
 	}
-	
+
 	return users
 }
 
@@ -249,18 +265,9 @@ func (r *Room) ReleaseNickname(nickname string) {
 	}
 }
 
-// Stop gracefully shuts down the room
+// Stop gracefully shuts down the room.
 func (r *Room) Stop() error {
-	// Cancel the context to signal the run loop to exit
-	r.cancel()
-	
-	// Wait for the run goroutine to finish
+	r.stopOnce.Do(r.cancel)
 	<-r.done
-	
-	// Close all channels
-	close(r.broadcast)
-	close(r.join)
-	close(r.leave)
-	
 	return nil
 }
