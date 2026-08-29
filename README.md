@@ -55,6 +55,8 @@ Notes:
 - The chat UI renders at a fixed 80×24; a smaller local terminal will look
   clipped.
 
+![Chat Tails first-party TUI client](docs/images/chat-tails-tui.png)
+
 ## Installation
 
 ### Released Binary
